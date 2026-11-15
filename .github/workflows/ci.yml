@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer run of the same event on the same ref supersedes an older one. A
+# merge queue entry has a ref of its own, so entries never cancel each other.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    name: The scripts and their tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: The shell scripts parse
+        run: for script in *.sh; do bash -n "$script"; done
+
+      - name: The scripts' own tests
+        run: python3 -m unittest discover -s tests -v
+
+      # test_make_help.py runs from a consumer, so it is run from one: the fixture's
+      # Makefile, with build-tools beside it where a consumer mounts it.
+      - name: make help passes against a consumer's Makefile
+        run: |
+          consumer="$(mktemp -d)"
+          cp tests/consumer/Makefile "$consumer/"
+          mkdir "$consumer/build-tools"
+          cp make-help.awk test_make_help.py "$consumer/build-tools/"
+          python3 "$consumer/build-tools/test_make_help.py" --root "$consumer" --list '<thing>=THINGS' -v
+
+  # What the ruleset requires. It waits for every other job, a census holds
+  # that list to the workflow's jobs, and it fails when any of them failed or
+  # was cancelled. A job skipped by its own condition passes.
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [scripts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/workflows
+      - name: The gate waits for every other job
+        run: |
+          jobs="$(yq '.jobs | keys | .[] | select(. != "gate")' .github/workflows/ci.yml | sort)"
+          waits="$(yq '.jobs.gate.needs[]' .github/workflows/ci.yml | sort)"
+          if [ "$jobs" != "$waits" ]; then
+            echo "CI Gate's needs differ from the workflow's jobs (< jobs, > needs):" >&2
+            diff <(echo "$jobs") <(echo "$waits") >&2
+            exit 1
+          fi
+      - name: Every job it waits for passed or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null
