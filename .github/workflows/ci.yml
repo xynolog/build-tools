@@ -40,6 +40,16 @@ jobs:
       - name: The scripts' own tests
         run: python3 -m unittest discover -s tests -v
 
+      - name: Install osv-scanner
+        run: |
+          bash install-osv-scanner.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The real scanner, through advisories.py, over a fixture of every lockfile
+      # format the repositories use.
+      - name: advisories.py finds an advisory in every lockfile format
+        run: python3 tests/live_osv_scanner.py -v
+
       # test_make_help.py runs from a consumer, so it is run from one: the fixture's
       # Makefile, with build-tools beside it where a consumer mounts it.
       - name: make help passes against a consumer's Makefile
