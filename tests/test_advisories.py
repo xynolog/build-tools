@@ -18,14 +18,10 @@ arguments = sys.argv[1:]
 open(os.environ["CALLS"], "w").write(json.dumps(arguments))
 open(os.environ["CALLS"] + ".config", "w").write(open(arguments[arguments.index("--config") + 1]).read())
 handed = [arguments[i + 1] for i, a in enumerate(arguments) if a == "--lockfile"]
-for path in handed:
-    if path.startswith("osv-scanner:"):
-        open(os.environ["CALLS"] + ".swift", "w").write(open(path.split(":", 1)[1]).read())
 report = json.loads(os.environ["REPORT"])
 for result in report.get("results", []):
     base = result["source"]["path"]
-    result["source"]["path"] = next(p for p in handed if os.path.basename(p.split(":", 1)[-1]) == base
-                                    or (base == "Package.resolved" and p.startswith("osv-scanner:")))
+    result["source"]["path"] = next(p for p in handed if os.path.basename(p) == base)
 print(json.dumps(report))
 sys.exit(int(os.environ["EXIT"]))
 """
@@ -140,7 +136,7 @@ class Advisories(unittest.TestCase):
             "package-lock.json", "rust/Cargo.lock", "go/go.mod", "python/uv.lock", "csharp/packages.lock.json",
             "kotlin/gradle.lockfile", "haskell/cabal.project.freeze", "typescript/package-lock.json")))
 
-    def test_hands_swift_pins_over_as_swifturl_packages(self):
+    def test_hands_package_resolved_over_as_it_is(self):
         self.track("swift/Package.resolved", json.dumps({"version": 3, "pins": [{
             "identity": "swift-nio", "kind": "remoteSourceControl",
             "location": "https://github.com/apple/swift-nio.git",
@@ -149,9 +145,8 @@ class Advisories(unittest.TestCase):
                                          ("GHSA-7fj7-39wj-c64f", [])))
         self.assertEqual(result.returncode, 1)
         self.assertIn("swift/Package.resolved: github.com/apple/swift-nio 2.29.0: GHSA-7fj7-39wj-c64f", result.stderr)
-        converted = json.loads(Path(str(self.calls) + ".swift").read_text())
-        self.assertEqual(converted["results"][0]["packages"], [{"package": {
-            "name": "github.com/apple/swift-nio", "version": "2.29.0", "ecosystem": "SwiftURL"}}])
+        self.assertEqual(self.handed(), [str(self.root.resolve() / "package-lock.json"),
+                                         str(self.root.resolve() / "swift/Package.resolved")])
 
     def test_refuses_a_swift_pin_without_a_version(self):
         self.track("swift/Package.resolved", json.dumps({"version": 2, "pins": [{

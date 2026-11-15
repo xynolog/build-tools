@@ -28,8 +28,7 @@ import tomllib
 from pathlib import Path
 
 # The lockfiles scanned, by name: those of every language the repositories
-# use. OCaml's opam has none. Swift's Package.resolved osv-scanner does not
-# read by default, so it is handed over in osv-scanner's own lockfile format.
+# use. OCaml's opam has none.
 LOCKFILES = {
     "package-lock.json",
     "Cargo.lock",
@@ -64,20 +63,11 @@ def read_ignores(root):
     return ignores
 
 
-def swift_lockfile(resolved, directory):
-    """Package.resolved (format 2 or 3) as osv-scanner's own JSON lockfile, in the SwiftURL ecosystem."""
-    data = json.loads(resolved.read_text())
-    if data["version"] not in (2, 3):
-        fail([f"{resolved}: Package.resolved format {data['version']} is not one this script reads."])
-    packages = []
-    for pin in data["pins"]:
+def refuse_unversioned_swift_pins(resolved):
+    """A pin to a bare revision has no version for an advisory to match: it would pass unseen."""
+    for pin in json.loads(resolved.read_text())["pins"]:
         if "version" not in pin["state"]:
             fail([f"{resolved}: {pin['identity']} is pinned to a revision, not a version, so no advisory can match it."])
-        name = pin["location"].split("://", 1)[-1].removesuffix(".git")
-        packages.append({"package": {"name": name, "version": pin["state"]["version"], "ecosystem": "SwiftURL"}})
-    converted = directory / f"swift-{len(list(directory.iterdir()))}.json"
-    converted.write_text(json.dumps({"results": [{"packages": packages}]}))
-    return converted
 
 
 def scan(lockfiles, directory):
@@ -86,21 +76,16 @@ def scan(lockfiles, directory):
     configuration.write_text("")
     command = ["osv-scanner", "scan", "source", "--format", "json", "--no-call-analysis=go",
                "--config", str(configuration)]
-    shown = {}
     for lockfile in lockfiles:
         if lockfile.name == "Package.resolved":
-            converted = swift_lockfile(lockfile, directory)
-            shown[str(converted)] = shown[f"osv-scanner:{converted}"] = lockfile
-            command += ["--lockfile", f"osv-scanner:{converted}"]
-        else:
-            shown[str(lockfile)] = lockfile
-            command += ["--lockfile", str(lockfile)]
+            refuse_unversioned_swift_pins(lockfile)
+        command += ["--lockfile", str(lockfile)]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode not in (0, 1):
         fail([f"osv-scanner failed (exit {result.returncode}):", result.stderr])
     findings = []
     for source in json.loads(result.stdout)["results"]:
-        lockfile = shown[source["source"]["path"]]
+        lockfile = Path(source["source"]["path"])
         for package in source["packages"]:
             advisories = {advisory["id"]: advisory for advisory in package["vulnerabilities"]}
             for group in package["groups"]:
