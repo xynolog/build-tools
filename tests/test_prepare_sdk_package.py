@@ -36,26 +36,26 @@ class PrepareSdkPackage(unittest.TestCase):
 
     def test_a_bundle_beside_the_package_is_named_by_a_relative_path(self):
         bundle = self.bundle("app/.build/sdk-artifacts", [
-            {"ecosystem": "npm", "package": "@xynoplex/sdk", "path": "typescript/xynoplex-sdk-1.0.0.tgz"},
-            {"ecosystem": "go", "package": "go.xynoplex.dev/sdk", "path": "go/go-proxy"},
-        ], ["typescript/xynoplex-sdk-1.0.0.tgz"])
+            {"ecosystem": "npm", "package": "@xynolog/sdk", "path": "typescript/xynolog-sdk-1.0.0.tgz"},
+            {"ecosystem": "go", "package": "github.com/xynolog/sdk/go", "path": "go/go-proxy"},
+        ], ["typescript/xynolog-sdk-1.0.0.tgz"])
         result = self.prepare(bundle)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.dependencies(), {
-            "react": "19.0.0", "@xynoplex/sdk": "file:.build/sdk-artifacts/typescript/xynoplex-sdk-1.0.0.tgz"})
+            "react": "19.0.0", "@xynolog/sdk": "file:.build/sdk-artifacts/typescript/xynolog-sdk-1.0.0.tgz"})
 
     def test_a_bundle_mounted_elsewhere_is_named_by_a_path_up_and_across(self):
         bundle = self.bundle("sdk-bundle", [
-            {"ecosystem": "npm", "package": "@xynoplex/sdk", "path": "typescript/xynoplex-sdk-1.0.0.tgz"},
-        ], ["typescript/xynoplex-sdk-1.0.0.tgz"])
+            {"ecosystem": "npm", "package": "@xynolog/sdk", "path": "typescript/xynolog-sdk-1.0.0.tgz"},
+        ], ["typescript/xynolog-sdk-1.0.0.tgz"])
         result = self.prepare(bundle)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.dependencies()["@xynoplex/sdk"],
-                         "file:../sdk-bundle/typescript/xynoplex-sdk-1.0.0.tgz")
+        self.assertEqual(self.dependencies()["@xynolog/sdk"],
+                         "file:../sdk-bundle/typescript/xynolog-sdk-1.0.0.tgz")
 
     def test_refuses_a_missing_tarball(self):
         bundle = self.bundle("sdk-bundle", [
-            {"ecosystem": "npm", "package": "@xynoplex/sdk", "path": "typescript/xynoplex-sdk-1.0.0.tgz"},
+            {"ecosystem": "npm", "package": "@xynolog/sdk", "path": "typescript/xynolog-sdk-1.0.0.tgz"},
         ], [])
         result = self.prepare(bundle)
         self.assertNotEqual(result.returncode, 0)
@@ -63,7 +63,7 @@ class PrepareSdkPackage(unittest.TestCase):
 
     def test_refuses_a_bundle_with_no_npm_package(self):
         bundle = self.bundle("sdk-bundle", [
-            {"ecosystem": "go", "package": "go.xynoplex.dev/sdk", "path": "go/go-proxy"},
+            {"ecosystem": "go", "package": "github.com/xynolog/sdk/go", "path": "go/go-proxy"},
         ], [])
         result = self.prepare(bundle)
         self.assertNotEqual(result.returncode, 0)
