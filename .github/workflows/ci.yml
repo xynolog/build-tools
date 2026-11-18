@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: The shell scripts parse
-        run: for script in *.sh; do bash -n "$script"; done
+        run: for script in *.sh ocaml/*.sh; do bash -n "$script"; done
 
       - name: The scripts' own tests
         run: python3 -m unittest discover -s tests -v

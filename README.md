@@ -13,6 +13,9 @@ from there. A repository takes a fix by moving its pin.
 | `prepare-sdk-package.py` | Points a `package.json` at the npm tarballs of a verified SDK artifact bundle, each a `file:` dependency by a path relative to the `package.json` | `python3 build-tools/prepare-sdk-package.py <bundle directory> <package.json>` |
 | `advisories.py` | Fails on any published advisory for a dependency in a tracked lockfile (or one CI resolved) that `advisories.toml` does not ignore with a reason, and on an ignore that matched nothing | `python3 build-tools/advisories.py --root . [--lockfile PATH]`, with osv-scanner on PATH |
 | `install-osv-scanner.sh` | Installs the osv-scanner release `advisories.py` runs, checked against its recorded SHA-256 | `bash build-tools/install-osv-scanner.sh <directory>` |
+| `ocaml/toolchain.json` | The OCaml toolchain's pins: the compiler, dune, ocamlformat, the opam repository and dune's overlay, and the image they are built on. Nothing else states them | Read by the two scripts below |
+| `ocaml/check-toolchain.py` | Holds each dune project it is given to those pins, and names every one that disagrees | `python3 build-tools/ocaml/check-toolchain.py <project>...`, or `--base-image` for the pinned image |
+| `ocaml/toolchain-image.sh` | Checks the projects, then builds the toolchain's image (`ocaml/Dockerfile`) from the pinned base, tagged `xynolog-ocaml-toolchain` | `bash build-tools/ocaml/toolchain-image.sh <project>...` |
 
 Only what at least two repositories run belongs here. `tests/` holds the
 scripts' own tests; CI runs them, `tests/live_osv_scanner.py` against the real
