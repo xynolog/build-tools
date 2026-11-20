@@ -161,6 +161,31 @@ class Advisories(unittest.TestCase):
         self.run_script()
         self.assertEqual(Path(str(self.calls) + ".config").read_text(), "")
 
+    def test_refuses_a_dune_package_without_its_version(self):
+        self.track("ocaml/dune.lock/lock.dune", "(lang package 0.1)\n")
+        self.track("ocaml/dune.lock/tls.2.0.0.pkg", "(build (run dune build))\n")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("tls.2.0.0.pkg: states 0 versions, not one.", result.stderr)
+
+    def test_refuses_a_dune_package_named_for_another_version(self):
+        self.track("ocaml/dune.lock/lock.dune", "(lang package 0.1)\n")
+        self.track("ocaml/dune.lock/tls.2.0.0.pkg", "(version 2.1.0)\n")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("tls.2.0.0.pkg: states version 2.1.0, and its name is not <package>.2.1.0.pkg.", result.stderr)
+
+    def test_refuses_a_dune_lock_that_pins_nothing(self):
+        self.track("ocaml/dune.lock/lock.dune", "(lang package 0.1)\n")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ocaml/dune.lock pins no package.", result.stderr)
+
+    def test_hands_no_dune_lock_to_the_scanner(self):
+        self.track("ocaml/dune.lock/lock.dune", "(lang package 0.1)\n")
+        self.run_script()
+        self.assertEqual(self.handed(), [str(self.root.resolve() / "package-lock.json")])
+
 
 if __name__ == "__main__":
     unittest.main()

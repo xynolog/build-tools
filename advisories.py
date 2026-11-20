@@ -9,7 +9,10 @@ on PATH (install-osv-scanner.sh):
 It scans every lockfile git tracks in the repository, and each --lockfile
 named: one CI resolved where the repository commits none. osv-scanner runs
 with an empty configuration, so only advisories.toml, at the repository's
-root, ignores anything. The run fails on a finding no ignore names, and on an
+root, ignores anything. A dune package lock (a dune.lock directory: its
+lock.dune and a <name>.<version>.pkg file for each package) is one osv-scanner
+cannot match, so each of its packages is asked of OSV's API, in the opam
+ecosystem, directly. The run fails on a finding no ignore names, and on an
 ignore that matched no finding, so none outlives what it was about:
 
     [[ignore]]
@@ -25,10 +28,11 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.request
 from pathlib import Path
 
-# The lockfiles scanned, by name: those of every language the repositories
-# use. OCaml's opam has none.
+# The lockfiles osv-scanner scans, by name: those of every language the
+# repositories use but OCaml, whose dune.lock is scanned by DUNE_LOCK.
 LOCKFILES = {
     "package-lock.json",
     "Cargo.lock",
@@ -39,6 +43,11 @@ LOCKFILES = {
     "cabal.project.freeze",
     "Package.resolved",
 }
+
+
+# A dune package lock is the directory holding this file.
+DUNE_LOCK = "lock.dune"
+OSV = "https://api.osv.dev/v1"
 
 
 def fail(lines):
@@ -68,6 +77,50 @@ def refuse_unversioned_swift_pins(resolved):
     for pin in json.loads(resolved.read_text())["pins"]:
         if "version" not in pin["state"]:
             fail([f"{resolved}: {pin['identity']} is pinned to a revision, not a version, so no advisory can match it."])
+
+
+def dune_packages(lock, tracked):
+    """Each package a dune lock pins, as (name, version), from its tracked .pkg files."""
+    packages = []
+    for pkg in sorted(path for path in tracked if path.parent == lock and path.suffix == ".pkg"):
+        versions = [line[len("(version "):-1] for line in pkg.read_text().splitlines()
+                    if line.startswith("(version ") and line.endswith(")")]
+        if len(versions) != 1:
+            fail([f"{pkg}: states {len(versions)} versions, not one."])
+        version = versions[0]
+        suffix = f".{version}.pkg"
+        if not pkg.name.endswith(suffix) or pkg.name == suffix:
+            fail([f"{pkg}: states version {version}, and its name is not <package>{suffix}."])
+        packages.append((pkg.name[:-len(suffix)], version))
+    if not packages:
+        fail([f"{lock} pins no package."])
+    return packages
+
+
+def osv(path, body=None):
+    request = urllib.request.Request(f"{OSV}/{path}", method="POST" if body else "GET",
+                                     data=json.dumps(body).encode() if body else None,
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.load(response)
+    except OSError as error:
+        fail([f"OSV's API failed at {path}: {error}"])
+
+
+def scan_dune_lock(lock, packages):
+    """Each finding of a dune lock's packages, as scan gives them, from OSV's API."""
+    answers = osv("querybatch", {"queries": [{"package": {"ecosystem": "opam", "name": name}, "version": version}
+                                             for name, version in packages]})["results"]
+    findings = []
+    for (name, version), answer in zip(packages, answers, strict=True):
+        if "next_page_token" in answer:
+            fail([f"{lock}: OSV's answer for {name} {version} runs past one page."])
+        for listed in answer.get("vulns", []):
+            advisory = osv(f"vulns/{listed['id']}")
+            findings.append((lock, name, version, {advisory["id"], *advisory.get("aliases", [])},
+                             [advisory["id"]], advisory.get("summary", "")))
+    return findings
 
 
 def scan(lockfiles, directory):
@@ -109,17 +162,23 @@ def main():
     tracked = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, text=True,
                              check=True).stdout.split("\0")
     lockfiles = [root / path for path in tracked if path and Path(path).name in LOCKFILES]
+    tracked_paths = [root / path for path in tracked if path]
+    dune_locks = [path.parent for path in tracked_paths if path.name == DUNE_LOCK]
     for lockfile in arguments.lockfiles:
         if not lockfile.is_file():
             fail([f"{lockfile} does not exist."])
         lockfiles.append(lockfile.resolve())
-    if not lockfiles:
+    if not lockfiles and not dune_locks:
         fail([f"{root} has no lockfile to scan."])
-    for lockfile in lockfiles:
+    for lockfile in lockfiles + dune_locks:
         print(f"scanning {lockfile.relative_to(root) if lockfile.is_relative_to(root) else lockfile}")
 
-    with tempfile.TemporaryDirectory() as scratch:
-        findings = scan(lockfiles, Path(scratch))
+    findings = []
+    if lockfiles:
+        with tempfile.TemporaryDirectory() as scratch:
+            findings += scan(lockfiles, Path(scratch))
+    for lock in dune_locks:
+        findings += scan_dune_lock(lock, dune_packages(lock, tracked_paths))
 
     problems = []
     matched = set()
@@ -140,7 +199,7 @@ def main():
         lines += ["Ignores in advisories.toml that matched no finding (delete them):", *(f"  {id}" for id in stale)]
     if lines:
         fail(lines)
-    print(f"{len(lockfiles)} lockfiles, {len(findings)} findings, each ignored with a reason")
+    print(f"{len(lockfiles) + len(dune_locks)} lockfiles, {len(findings)} findings, each ignored with a reason")
 
 
 if __name__ == "__main__":

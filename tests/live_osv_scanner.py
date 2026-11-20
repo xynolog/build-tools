@@ -1,4 +1,4 @@
-"""advisories.py and the real osv-scanner find a known advisory in every lockfile format the repositories use.
+"""advisories.py, with the real osv-scanner and OSV's API, finds a known advisory in every lockfile format the repositories use.
 
 Each fixture pins one package at a version OSV records an advisory for
 (checked against api.osv.dev when the fixture was chosen). A format the
@@ -75,6 +75,13 @@ index-state: hackage.haskell.org 2026-01-01T00:00:00Z
         "github.com/apple/swift-nio 2.29.0"),
 }
 
+# A dune package lock, which advisories.py asks OSV's API about itself: the
+# directory, its files, and the package it has to report.
+DUNE_LOCK = ("ocaml/dune.lock", {
+    "ocaml/dune.lock/lock.dune": "(lang package 0.1)\n",
+    "ocaml/dune.lock/tls.2.0.0.pkg": "(version 2.0.0)\n",
+}, "tls 2.0.0")
+
 # A package with no advisory, so a clean scan is seen to pass.
 CLEAN = json.dumps({
     "name": "fixture", "version": "1.0.0", "lockfileVersion": 3, "requires": True,
@@ -104,16 +111,23 @@ def advisories(root):
 class RealScanner(unittest.TestCase):
     def test_finds_an_advisory_in_every_lockfile_format(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = repository(directory, {path: text for path, (text, _) in FIXTURES.items()})
+            lock, files, locked = DUNE_LOCK
+            root = repository(directory, {**{path: text for path, (text, _) in FIXTURES.items()}, **files})
             result = advisories(root)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        for path, (_, package) in FIXTURES.items():
+        for path, package in [*((path, package) for path, (_, package) in FIXTURES.items()), (lock, locked)]:
             with self.subTest(path=path):
                 self.assertIn(f"  {path}: {package}: ", result.stderr)
 
     def test_passes_a_lockfile_with_no_advisory(self):
         with tempfile.TemporaryDirectory() as directory:
             result = advisories(repository(directory, {"package-lock.json": CLEAN}))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_passes_a_dune_lock_with_no_advisory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = advisories(repository(directory, {"dune.lock/lock.dune": "(lang package 0.1)\n",
+                                                       "dune.lock/yojson.3.0.0.pkg": "(version 3.0.0)\n"}))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
