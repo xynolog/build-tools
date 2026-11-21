@@ -53,6 +53,39 @@ class PrepareSdkPackage(unittest.TestCase):
         self.assertEqual(self.dependencies()["@xynolog/sdk"],
                          "file:../sdk-bundle/typescript/xynolog-sdk-1.0.0.tgz")
 
+    def two_packages(self):
+        return self.bundle("sdk-bundle", [
+            {"ecosystem": "npm", "package": "@xynolog/sdk", "path": "typescript/xynolog-sdk-1.0.0.tgz"},
+            {"ecosystem": "npm", "package": "@xynolog/core", "path": "typescript/xynolog-core-1.0.0.tgz"},
+        ], ["typescript/xynolog-sdk-1.0.0.tgz", "typescript/xynolog-core-1.0.0.tgz"])
+
+    def test_a_package_listed_for_development_stays_there_and_brings_the_rest(self):
+        self.package.write_text(json.dumps({"name": "e2e", "devDependencies": {"@xynolog/sdk": "0.7.3", "vitest": "4.0.0"}}))
+        result = self.prepare(self.two_packages())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        package = json.loads(self.package.read_text())
+        self.assertNotIn("dependencies", package)
+        self.assertEqual(package["devDependencies"], {
+            "@xynolog/sdk": "file:../sdk-bundle/typescript/xynolog-sdk-1.0.0.tgz",
+            "@xynolog/core": "file:../sdk-bundle/typescript/xynolog-core-1.0.0.tgz",
+            "vitest": "4.0.0"})
+
+    def test_each_listed_package_stays_in_its_section_and_the_rest_join_dependencies(self):
+        self.package.write_text(json.dumps({"name": "app", "dependencies": {"@xynolog/sdk": "0.7.3"},
+                                            "devDependencies": {"@xynolog/core": "0.7.3"}}))
+        result = self.prepare(self.two_packages())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        package = json.loads(self.package.read_text())
+        self.assertEqual(package["dependencies"], {"@xynolog/sdk": "file:../sdk-bundle/typescript/xynolog-sdk-1.0.0.tgz"})
+        self.assertEqual(package["devDependencies"], {"@xynolog/core": "file:../sdk-bundle/typescript/xynolog-core-1.0.0.tgz"})
+
+    def test_refuses_a_package_listed_in_both_sections(self):
+        self.package.write_text(json.dumps({"name": "app", "dependencies": {"@xynolog/sdk": "0.7.3"},
+                                            "devDependencies": {"@xynolog/sdk": "0.7.3"}}))
+        result = self.prepare(self.two_packages())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("@xynolog/sdk in both dependencies and devDependencies", result.stderr)
+
     def test_refuses_a_missing_tarball(self):
         bundle = self.bundle("sdk-bundle", [
             {"ecosystem": "npm", "package": "@xynolog/sdk", "path": "typescript/xynolog-sdk-1.0.0.tgz"},
