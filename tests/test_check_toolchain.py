@@ -16,26 +16,31 @@ def check(*arguments):
     return subprocess.run([sys.executable, str(SCRIPT), *arguments], capture_output=True, text=True)
 
 
+def pinned_project(base, name, *, ocaml=PINS["ocaml"], formatter_library=None):
+    """A dune project in base that states the pins, but for those given."""
+    root = base / name
+    root.mkdir()
+    lang = ".".join(PINS["dune"].split(".")[:2])
+    library = f"\n  (ocamlformat-lib (= {formatter_library}))" if formatter_library else ""
+    (root / "dune-project").write_text(
+        f"(lang dune {lang})\n(package\n (name {name})\n (depends\n  (ocaml (= {ocaml})){library}\n"
+        f"  (ocamlformat (and :with-test (= {PINS['ocamlformat']})))))\n")
+    (root / "dune-workspace").write_text(
+        f"(lang dune {lang})\n"
+        f"(repository (name pinned) (url \"git+https://github.com/ocaml/opam-repository.git#{PINS['opamRepository']}\"))\n"
+        f"(repository (name pinned-overlay) (url \"git+https://github.com/ocaml-dune/opam-overlays.git#{PINS['duneOverlay']}\"))\n")
+    (root / ".ocamlformat").write_text(f"version={PINS['ocamlformat']}\n")
+    return root
+
+
 class CheckToolchain(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
 
-    def project(self, name, *, ocaml=PINS["ocaml"], formatter_library=None):
-        root = self.base / name
-        root.mkdir()
-        lang = ".".join(PINS["dune"].split(".")[:2])
-        library = f"\n  (ocamlformat-lib (= {formatter_library}))" if formatter_library else ""
-        (root / "dune-project").write_text(
-            f"(lang dune {lang})\n(package\n (name {name})\n (depends\n  (ocaml (= {ocaml})){library}\n"
-            f"  (ocamlformat (and :with-test (= {PINS['ocamlformat']})))))\n")
-        (root / "dune-workspace").write_text(
-            f"(lang dune {lang})\n"
-            f"(repository (name pinned) (url \"git+https://github.com/ocaml/opam-repository.git#{PINS['opamRepository']}\"))\n"
-            f"(repository (name pinned-overlay) (url \"git+https://github.com/ocaml-dune/opam-overlays.git#{PINS['duneOverlay']}\"))\n")
-        (root / ".ocamlformat").write_text(f"version={PINS['ocamlformat']}\n")
-        return root
+    def project(self, name, **pins):
+        return pinned_project(self.base, name, **pins)
 
     def test_projects_on_the_pins_agree(self):
         result = check(str(self.project("one")), str(self.project("two", formatter_library=PINS["ocamlformat"])))

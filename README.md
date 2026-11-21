@@ -15,7 +15,7 @@ from there. A repository takes a fix by moving its pin.
 | `install-osv-scanner.sh` | Installs the osv-scanner release `advisories.py` runs, checked against its recorded SHA-256 | `bash build-tools/install-osv-scanner.sh <directory>` |
 | `ocaml/toolchain.json` | The OCaml toolchain's pins: the compiler, dune, ocamlformat, the opam repository and dune's overlay, and the image they are built on. Nothing else states them | Read by the two scripts below |
 | `ocaml/check-toolchain.py` | Holds each dune project it is given to those pins, and names every one that disagrees | `python3 build-tools/ocaml/check-toolchain.py <project>...`, or `--base-image` for the pinned image |
-| `ocaml/toolchain-image.sh` | Checks the projects, then builds the toolchain's image (`ocaml/Dockerfile`) from the pinned base, tagged `xynolog-ocaml-toolchain` | `bash build-tools/ocaml/toolchain-image.sh <project>...` |
+| `ocaml/toolchain-image.sh` | Checks the projects, then tags the toolchain's image (`ocaml/Dockerfile`) `xynolog-ocaml-toolchain`. It builds the image from the pinned base only when none has the tag that the Dockerfile and the pins digest to, so an image a CI job loaded from its cache is used as it is | `bash build-tools/ocaml/toolchain-image.sh <project>...`, or `--tag` for that tag |
 
 Only what at least two repositories run belongs here. `tests/` holds the
 scripts' own tests; CI runs them, `tests/live_osv_scanner.py` against the real

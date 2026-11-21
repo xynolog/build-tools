@@ -1,5 +1,6 @@
 # The OCaml toolchain's image: the pinned base, with the pinned opam repository
-# and dune. toolchain-image.sh builds it, with this directory as its context.
+# and dune. toolchain-image.sh builds it, with this directory as its context,
+# and tags it by a digest of this file and of each file it copies.
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 USER root
