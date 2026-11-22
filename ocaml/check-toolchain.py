@@ -3,9 +3,11 @@
 toolchain.json, beside this script, is the one statement of the pins: the
 compiler, dune, ocamlformat, the opam repository and dune's overlay, and the
 image they are built on. A project is a directory with its dune-project,
-dune-workspace and .ocamlformat. Each must name the pinned compiler, dune's
-language at the pinned dune's minor version, the pinned ocamlformat for its
-tests, and the pinned repositories; a project that names ocamlformat-lib
+dune-workspace, .ocamlformat and the lock directory dune.lock. Its lock must
+hold the pinned compiler, which the project builds on whatever range its
+packages admit; dune-project must name dune's language at the pinned dune's
+minor version and the pinned ocamlformat, under whichever filter; and
+dune-workspace the pinned repositories. A project that names ocamlformat-lib
 names the pinned ocamlformat's. Every disagreement is printed, naming its
 project, and any fails the run.
 
@@ -24,9 +26,9 @@ def disagreements(project_root):
     workspace = (project_root / 'dune-workspace').read_text()
     ocamlformat = (project_root / '.ocamlformat').read_text().strip()
     wanted = [
-        ('the compiler', re.findall(r'\(ocaml \(= ([^)]+)\)\)', project), [pins['ocaml']]),
+        ('the compiler', sorted(path.name[len('ocaml.'):-len('.pkg')] for path in (project_root / 'dune.lock').glob('ocaml.*.pkg')), [pins['ocaml']]),
         ("dune's language", re.findall(r'\(lang dune ([^)]+)\)', project), ['.'.join(pins['dune'].split('.')[:2])]),
-        ('ocamlformat', re.findall(r'\(ocamlformat \(and :with-test \(= ([^)]+)\)\)\)', project), [pins['ocamlformat']]),
+        ('ocamlformat', re.findall(r'\(ocamlformat \(and :[a-z-]+ \(= ([^)]+)\)\)\)', project), [pins['ocamlformat']]),
         ('.ocamlformat', [ocamlformat], ['version=' + pins['ocamlformat']]),
         ('the opam repository', re.findall(r'git\+https://github.com/ocaml/opam-repository.git#([a-f0-9]+)', workspace), [pins['opamRepository']]),
         ("dune's overlay", re.findall(r'git\+https://github.com/ocaml-dune/opam-overlays.git#([a-f0-9]+)', workspace), [pins['duneOverlay']]),
